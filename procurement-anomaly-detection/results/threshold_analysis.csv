@@ -1,0 +1,5 @@
+threshold_ratio,threshold_percentage,rule,eligible_events,flagged_events,flagged_percentage,unflagged_events
+0.5,50.0,IPI_DAYS <= 0.50 * HIST_MEDIAN_IPI,64892,19983,30.79,44909
+0.4,40.0,IPI_DAYS <= 0.40 * HIST_MEDIAN_IPI,64892,17217,26.53,47675
+0.3,30.0,IPI_DAYS <= 0.30 * HIST_MEDIAN_IPI,64892,13861,21.36,51031
+0.2,20.0,IPI_DAYS <= 0.20 * HIST_MEDIAN_IPI,64892,10234,15.77,54658

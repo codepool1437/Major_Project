@@ -1,0 +1,7 @@
+metric,value
+Eligible events,64892.0
+Flagged events,13861.0
+Flagged percentage,21.36
+Events with zero historical MAD,115.0
+Flagged events with zero historical MAD,9.0
+Provisional threshold,0.3

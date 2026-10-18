@@ -1,0 +1,3 @@
+method,precision,recall,f1_score,false_positive_rate,true_positives,false_positives,false_negatives,true_negatives
+Median-based baseline,0.7854981237138361,0.9999229524616688,0.8798345818785804,0.2730564758455967,12978,3544,1,9435
+Isolation Forest + early-direction filter,0.5273972602739726,0.0711919254179829,0.12544973185798655,0.06379536173819246,924,828,12055,12151

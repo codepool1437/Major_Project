@@ -1,0 +1,6 @@
+metric,value
+Eligible events,64892.0
+Potential early reorders,19983.0
+Flagged percentage,30.79
+Early interval ratio threshold,0.5
+Minimum historical intervals,3.0
