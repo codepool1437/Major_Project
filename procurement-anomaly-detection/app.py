@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import altair as alt
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -16,9 +18,6 @@ PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
 ALERTS_FILE = RESULTS_DIR / "improved_ranked_early_reorders.csv"
 # Use the full event history for the inspector.
 EVENTS_FILE = PROCESSED_DIR / "temporal_event_features.csv"
-
-# Keep the model-ready dataset separate for future scoring features.
-MODEL_EVENTS_FILE = PROCESSED_DIR / "model_ready_events.csv"
 
 st.set_page_config(
     page_title="Procurement Anomaly Detection",
@@ -101,6 +100,7 @@ st.markdown(
         width: 260px; height: 260px;
         border-radius: 50%;
         background: radial-gradient(circle, rgba(0,212,255,0.35), transparent 70%);
+        pointer-events: none;
     }}
     .hero-badge {{
         display: inline-block;
@@ -143,6 +143,9 @@ st.markdown(
         box-shadow: 0 8px 24px rgba(0,0,0,0.25);
         transition: transform .2s ease, border-color .2s ease;
         height: 100%;
+        min-height: 150px;
+        word-wrap: break-word;
+        overflow-wrap: anywhere;
     }}
     .kpi:hover {{
         transform: translateY(-3px);
@@ -155,11 +158,23 @@ st.markdown(
         text-transform: uppercase;
         color: #8E96B5;
     }}
+    .kpi .info {{
+        display: inline-block;
+        margin-left: 4px;
+        color: {ACCENT_2};
+        cursor: help;
+    }}
     .kpi .value {{
         font-size: 1.85rem;
         font-weight: 800;
         margin-top: 0.25rem;
         color: #FFFFFF;
+    }}
+    .kpi .desc {{
+        margin-top: 0.35rem;
+        font-size: 0.74rem;
+        line-height: 1.35;
+        color: #8E96B5;
     }}
     .kpi .bar {{
         height: 3px;
@@ -188,6 +203,7 @@ st.markdown(
         padding: 6px;
         border-radius: 14px;
         border: 1px solid rgba(255,255,255,0.06);
+        overflow-x: auto;
     }}
     button[data-baseweb="tab"] {{
         height: 44px;
@@ -196,6 +212,7 @@ st.markdown(
         font-weight: 600;
         color: #9AA2C0;
         background: transparent;
+        white-space: nowrap;
     }}
     button[data-baseweb="tab"][aria-selected="true"] {{
         color: #FFFFFF;
@@ -269,10 +286,20 @@ st.markdown(
         background: rgba(255,255,255,0.04);
         border: 1px solid rgba(255,255,255,0.08);
         line-height: 1.9;
+        overflow-wrap: anywhere;
     }}
     .detail-card b {{
         color: #8E96B5;
         font-weight: 600;
+    }}
+
+    .hint-box {{
+        padding: 0.9rem 1.1rem;
+        border-radius: 14px;
+        border: 1px dashed rgba(0,212,255,0.45);
+        background: rgba(0,212,255,0.06);
+        color: #C5CAE0;
+        font-size: 0.92rem;
     }}
 
     .footer {{
@@ -285,18 +312,54 @@ st.markdown(
     hr {{
         border-color: rgba(255,255,255,0.08);
     }}
+
+    /* ---------- Responsive adjustments ---------- */
+    @media (max-width: 1200px) {{
+        .hero h1 {{ font-size: 1.8rem; }}
+        .kpi .value {{ font-size: 1.5rem; }}
+        .kpi {{ min-height: 140px; }}
+    }}
+
+    @media (max-width: 768px) {{
+        .block-container {{
+            padding-left: 1rem;
+            padding-right: 1rem;
+        }}
+        .hero {{ padding: 1.3rem 1.2rem; border-radius: 16px; }}
+        .hero h1 {{ font-size: 1.45rem; }}
+        .hero p {{ font-size: 0.88rem; }}
+        .kpi {{ min-height: 0; margin-bottom: 0.4rem; }}
+        .kpi .value {{ font-size: 1.35rem; }}
+        button[data-baseweb="tab"] {{
+            padding: 0 12px;
+            font-size: 0.85rem;
+            height: 40px;
+        }}
+        div[data-testid="stMetricValue"] {{ font-size: 1.3rem; }}
+    }}
     </style>
     """,
     unsafe_allow_html=True,
 )
 
 
-def kpi_card(column, label, value):
+def kpi_card(column, label, value, help_text=""):
+    safe_help = help_text.replace('"', "&quot;")
+    info_icon = (
+        f'<span class="info" title="{safe_help}">ⓘ</span>'
+        if help_text
+        else ""
+    )
+    description = (
+        f'<div class="desc">{help_text}</div>' if help_text else ""
+    )
+
     column.markdown(
         f"""
-        <div class="kpi">
-            <div class="label">{label}</div>
+        <div class="kpi" title="{safe_help}">
+            <div class="label">{label}{info_icon}</div>
             <div class="value">{value}</div>
+            {description}
             <div class="bar"></div>
         </div>
         """,
@@ -425,6 +488,7 @@ required_event_columns = [
     "REQUEST_DATE",
     "IPI_DAYS",
     "HIST_MEDIAN_IPI",
+    "HISTORY_COUNT",
 ]
 
 missing_event_columns = [
@@ -604,18 +668,38 @@ else:
 
 col1, col2, col3, col4, col5 = st.columns(5)
 
-kpi_card(col1, "Eligible purchase events", f"{eligible_events:,}")
-kpi_card(col2, "Potential early reorders", f"{total_alerts:,}")
+kpi_card(
+    col1,
+    "Eligible purchase events",
+    f"{eligible_events:,}",
+    "Events with at least 3 previous intervals. Only these are "
+    "screened for early reorders.",
+)
+kpi_card(
+    col2,
+    "Potential early reorders",
+    f"{total_alerts:,}",
+    "Events flagged in the ranked alert file, before any "
+    "sidebar filters.",
+)
 kpi_card(
     col3,
     "Overall flagged percentage",
     f"{overall_alert_percentage:.2f}%",
+    "Potential early reorders divided by eligible purchase events.",
 )
-kpi_card(col4, "Alerts after filters", f"{filtered_alerts:,}")
+kpi_card(
+    col4,
+    "Alerts after filters",
+    f"{filtered_alerts:,}",
+    "Alerts matching the current sidebar filters.",
+)
 kpi_card(
     col5,
     "Reorder events with prior purchase",
     f"{total_events:,}",
+    "All recorded events with at least 1 earlier purchase of the "
+    "same customer–part pair. Larger than the eligible count.",
 )
 
 st.write("")
@@ -625,11 +709,10 @@ st.write("")
 # TABS
 # --------------------------------------------------
 
-tab_overview, tab_alerts, tab_details, tab_inspector = st.tabs(
+tab_overview, tab_alerts, tab_inspector = st.tabs(
     [
         "📈  Overview",
-        "🚨  Alerts",
-        "🔍  Alert Details",
+        "🚨  Alerts & Investigation",
         "🧭  Event Inspector",
     ]
 )
@@ -638,6 +721,34 @@ tab_overview, tab_alerts, tab_details, tab_inspector = st.tabs(
 # --------------------------------------------------
 # TAB 1: OVERVIEW (CHARTS)
 # --------------------------------------------------
+
+def build_score_bands(all_scores, n_bands=6):
+    """Fixed, labelled score bands based on the full alert file so the
+    bands do not shift when sidebar filters change."""
+    lo = float(all_scores.min())
+    hi = float(all_scores.max())
+
+    if not np.isfinite(lo) or not np.isfinite(hi):
+        return None, None
+
+    if hi == lo:
+        hi = lo + 1.0
+
+    edges = np.linspace(lo, hi, n_bands + 1)
+    labels = [
+        f"{edges[i]:.2f} – {edges[i + 1]:.2f}"
+        for i in range(n_bands)
+    ]
+
+    # Guard against duplicate labels caused by rounding.
+    if len(set(labels)) != len(labels):
+        labels = [
+            f"{edges[i]:.4f} – {edges[i + 1]:.4f}"
+            for i in range(n_bands)
+        ]
+
+    return edges, labels
+
 
 with tab_overview:
     section_header(
@@ -672,34 +783,87 @@ with tab_overview:
 
     with chart_col2:
         with st.container(border=True):
-            st.markdown("**Alert score distribution**")
+            st.markdown("**Alert score distribution (fixed score bands)**")
 
             if filtered.empty:
                 st.info("No scores to display.")
             else:
                 scores = filtered["RANKING_SCORE"].dropna()
+                all_scores = alerts["RANKING_SCORE"].dropna()
 
-                if scores.empty:
+                if scores.empty or all_scores.empty:
                     st.info("Ranking scores are unavailable.")
                 else:
-                    score_bins = pd.cut(
-                        scores,
-                        bins=10,
-                        duplicates="drop",
-                    ).value_counts().sort_index()
+                    edges, band_labels = build_score_bands(all_scores)
 
-                    score_chart = pd.DataFrame(
-                        {
-                            "Score range": score_bins.index.astype(str),
-                            "Alert count": score_bins.values,
-                        }
-                    ).set_index("Score range")
+                    if edges is None:
+                        st.info("Ranking scores are unavailable.")
+                    else:
+                        banded = pd.cut(
+                            scores,
+                            bins=edges,
+                            labels=band_labels,
+                            include_lowest=True,
+                        )
 
-                    st.bar_chart(
-                        score_chart,
-                        y_label="Number of alerts",
-                        color=ACCENT_2,
-                    )
+                        band_counts = (
+                            banded.value_counts()
+                            .reindex(band_labels, fill_value=0)
+                        )
+
+                        band_df = pd.DataFrame(
+                            {
+                                "Score band": band_labels,
+                                "Alerts": band_counts.values,
+                            }
+                        )
+
+                        band_chart = (
+                            alt.Chart(band_df)
+                            .mark_bar(
+                                color=ACCENT_2,
+                                cornerRadiusTopLeft=4,
+                                cornerRadiusTopRight=4,
+                            )
+                            .encode(
+                                x=alt.X(
+                                    "Score band:N",
+                                    sort=band_labels,
+                                    title="Ranking score band (low → high)",
+                                    axis=alt.Axis(labelAngle=-30),
+                                ),
+                                y=alt.Y(
+                                    "Alerts:Q",
+                                    title="Number of alerts",
+                                ),
+                                tooltip=[
+                                    alt.Tooltip(
+                                        "Score band:N",
+                                        title="Score band",
+                                    ),
+                                    alt.Tooltip(
+                                        "Alerts:Q",
+                                        title="Alerts",
+                                    ),
+                                ],
+                            )
+                            .properties(height=300)
+                            .configure_view(strokeWidth=0)
+                        )
+
+                        st.altair_chart(
+                            band_chart,
+                            width="stretch",
+                        )
+
+                        st.caption(
+                            "Bands are equal-width slices of the full "
+                            "alert-file score range, so they stay the "
+                            "same when filters change. The ranking "
+                            "score is a heuristic, not a probability: "
+                            "higher means a stronger early-reorder "
+                            "signal under the current formula."
+                        )
 
     if not filtered.empty:
         st.write("")
@@ -711,7 +875,7 @@ with tab_overview:
             color = SEVERITY_COLORS[sev]
             sev_col.markdown(
                 f"""
-                <div class="kpi" style="border-left: 4px solid {color};">
+                <div class="kpi" style="border-left: 4px solid {color}; min-height: 0;">
                     <div class="label">{sev} severity</div>
                     <div class="value">{count:,}</div>
                 </div>
@@ -721,8 +885,186 @@ with tab_overview:
 
 
 # --------------------------------------------------
-# TAB 2: ALERT TABLE
+# TAB 2: ALERTS & INVESTIGATION
 # --------------------------------------------------
+
+def render_alert_investigation(selected_alert):
+    """Details + interval history for one alert row."""
+    st.markdown("---")
+    section_header(
+        "Selected Alert Details",
+        "Details and purchase-interval history for the alert you "
+        "selected in the table above.",
+    )
+
+    detail_col1, detail_col2, detail_col3 = st.columns(3)
+
+    detail_col1.metric(
+        "Current interval",
+        f"{selected_alert['IPI_DAYS']:.0f} days",
+    )
+
+    detail_col2.metric(
+        "Historical median",
+        f"{selected_alert['HIST_MEDIAN_IPI']:.0f} days",
+    )
+
+    ratio = selected_alert.get("IPI_TO_HIST_MEDIAN", float("nan"))
+
+    detail_col3.metric(
+        "Current / historical median",
+        f"{ratio:.1%}" if pd.notna(ratio) else "N/A",
+    )
+
+    detail_col1, detail_col2, detail_col3 = st.columns(3)
+
+    mad = selected_alert.get("HIST_MAD_IPI", float("nan"))
+    history_count = selected_alert.get("HISTORY_COUNT", float("nan"))
+
+    detail_col1.metric(
+        "Historical MAD",
+        f"{mad:.1f} days" if pd.notna(mad) else "N/A",
+    )
+
+    detail_col2.metric(
+        "Previous intervals available",
+        f"{history_count:.0f}" if pd.notna(history_count) else "N/A",
+    )
+
+    detail_col3.metric(
+        "Ranking score",
+        f"{selected_alert['RANKING_SCORE']:.4f}",
+    )
+
+    st.write("")
+
+    st.markdown(
+        f"""
+        <div class="detail-card">
+            <b>Customer:</b> {selected_alert['CUSTOMER_ID']}<br>
+            <b>Item / Part:</b> {selected_alert['ITEM_ID']}<br>
+            <b>Request date:</b> {selected_alert['REQUEST_DATE']}<br>
+            <b>Severity:</b> {severity_pill(selected_alert['SEVERITY'])}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.write("")
+
+    alert_reason = selected_alert.get("ALERT_REASON", "")
+
+    if pd.notna(alert_reason) and str(alert_reason).strip():
+        st.info(f"**Why this event was flagged:** {alert_reason}")
+
+    if pd.notna(mad) and mad == 0:
+        st.warning(
+            "Historical MAD is zero. The past intervals show no "
+            "median absolute deviation, so variability-based scores "
+            "should be interpreted cautiously."
+        )
+
+    # ---- Interval history for this customer-part pair ----
+    st.markdown("**Purchase-interval history for this customer–part pair**")
+
+    pair_events = events[
+        (events["CUSTOMER_ID"].astype(str)
+         == str(selected_alert["CUSTOMER_ID"]))
+        & (events["ITEM_ID"].astype(str)
+           == str(selected_alert["ITEM_ID"]))
+    ].copy()
+
+    pair_intervals = (
+        pair_events[["REQUEST_DATE", "IPI_DAYS"]]
+        .dropna()
+        .sort_values("REQUEST_DATE")
+    )
+
+    if pair_intervals.empty:
+        st.info("No inter-purchase intervals are available for this pair.")
+    else:
+        flagged_point = pd.DataFrame(
+            {
+                "REQUEST_DATE": [selected_alert["REQUEST_DATE"]],
+                "IPI_DAYS": [selected_alert["IPI_DAYS"]],
+            }
+        ).dropna()
+
+        base = alt.Chart(pair_intervals)
+
+        line = base.mark_line(color=ACCENT_2).encode(
+            x=alt.X("REQUEST_DATE:T", title="Request date"),
+            y=alt.Y("IPI_DAYS:Q", title="Interval (days)"),
+        )
+
+        points = base.mark_point(
+            color=ACCENT_2, filled=True, size=45
+        ).encode(
+            x="REQUEST_DATE:T",
+            y="IPI_DAYS:Q",
+            tooltip=[
+                alt.Tooltip("REQUEST_DATE:T", title="Date"),
+                alt.Tooltip("IPI_DAYS:Q", title="Interval (days)"),
+            ],
+        )
+
+        layers = [line, points]
+
+        hist_median = selected_alert["HIST_MEDIAN_IPI"]
+        if pd.notna(hist_median):
+            median_rule = (
+                alt.Chart(pd.DataFrame({"median": [hist_median]}))
+                .mark_rule(color="#FECA57", strokeDash=[6, 4])
+                .encode(y="median:Q")
+            )
+            layers.append(median_rule)
+
+        if not flagged_point.empty:
+            flagged_layer = (
+                alt.Chart(flagged_point)
+                .mark_point(
+                    color="#FF4B6E",
+                    filled=True,
+                    size=170,
+                    stroke="white",
+                    strokeWidth=1.5,
+                )
+                .encode(
+                    x="REQUEST_DATE:T",
+                    y="IPI_DAYS:Q",
+                    tooltip=[
+                        alt.Tooltip(
+                            "REQUEST_DATE:T",
+                            title="Flagged date",
+                        ),
+                        alt.Tooltip(
+                            "IPI_DAYS:Q",
+                            title="Interval (days)",
+                        ),
+                    ],
+                )
+            )
+            layers.append(flagged_layer)
+
+        with st.container(border=True):
+            st.altair_chart(
+                alt.layer(*layers)
+                .properties(height=300)
+                .configure_view(strokeWidth=0),
+                width="stretch",
+            )
+
+        st.caption(
+            "Red marker = the selected alert. Dashed yellow line = "
+            "historical median interval for this alert."
+        )
+
+    st.caption(
+        "This alert is a candidate for investigation, not a confirmed "
+        "unnecessary purchase. The ranking score is heuristic, "
+        "not a probability."
+    )
+
 
 with tab_alerts:
     section_header(
@@ -756,7 +1098,7 @@ with tab_alerts:
             sort_options[sort_label],
             ascending=ascending,
             na_position="last",
-        )
+        ).reset_index(drop=True)
 
         display_columns = [
             "CUSTOMER_ID",
@@ -776,10 +1118,20 @@ with tab_alerts:
             if col in display_df.columns
         ]
 
-        st.dataframe(
+        st.markdown(
+            '<div class="hint-box">👆 <b>Click a row</b> in the table '
+            "to open its details and interval history below.</div>",
+            unsafe_allow_html=True,
+        )
+        st.write("")
+
+        table_event = st.dataframe(
             display_df[display_columns],
             width="stretch",
             hide_index=True,
+            on_select="rerun",
+            selection_mode="single-row",
+            key="alerts_table",
         )
 
         # Export exactly the columns shown in the table above,
@@ -795,120 +1147,22 @@ with tab_alerts:
             mime="text/csv",
         )
 
+        selected_rows = table_event.selection.rows
 
-# --------------------------------------------------
-# TAB 3: SELECTED ALERT DETAILS
-# --------------------------------------------------
-
-with tab_details:
-    section_header(
-        "Selected Alert Details",
-        "Inspect a single alert from the currently filtered results.",
-    )
-
-    if filtered.empty:
-        st.info("Apply filters that return alerts to inspect their details.")
-    else:
-        # Select an alert from the currently filtered results.
-        detail_options = filtered.reset_index(drop=True).copy()
-
-        detail_options["ALERT_LABEL"] = (
-            detail_options["CUSTOMER_ID"].astype(str)
-            + " | "
-            + detail_options["ITEM_ID"].astype(str)
-            + " | "
-            + detail_options["REQUEST_DATE"].astype(str).str[:10]
-            + " | Score: "
-            + detail_options["RANKING_SCORE"].round(3).astype(str)
-        )
-
-        selected_label = st.selectbox(
-            "Choose an alert to inspect",
-            options=detail_options["ALERT_LABEL"].tolist(),
-            key="selected_alert_detail",
-        )
-
-        selected_alert = detail_options.loc[
-            detail_options["ALERT_LABEL"] == selected_label
-        ].iloc[0]
-
-        # Display the principal fields.
-        detail_col1, detail_col2, detail_col3 = st.columns(3)
-
-        detail_col1.metric(
-            "Current interval",
-            f"{selected_alert['IPI_DAYS']:.0f} days",
-        )
-
-        detail_col2.metric(
-            "Historical median",
-            f"{selected_alert['HIST_MEDIAN_IPI']:.0f} days",
-        )
-
-        ratio = selected_alert.get("IPI_TO_HIST_MEDIAN", float("nan"))
-
-        detail_col3.metric(
-            "Current / historical median",
-            f"{ratio:.1%}" if pd.notna(ratio) else "N/A",
-        )
-
-        detail_col1, detail_col2, detail_col3 = st.columns(3)
-
-        mad = selected_alert.get("HIST_MAD_IPI", float("nan"))
-        history_count = selected_alert.get("HISTORY_COUNT", float("nan"))
-
-        detail_col1.metric(
-            "Historical MAD",
-            f"{mad:.1f} days" if pd.notna(mad) else "N/A",
-        )
-
-        detail_col2.metric(
-            "Previous intervals available",
-            f"{history_count:.0f}" if pd.notna(history_count) else "N/A",
-        )
-
-        detail_col3.metric(
-            "Ranking score",
-            f"{selected_alert['RANKING_SCORE']:.4f}",
-        )
-
-        st.write("")
-
-        st.markdown(
-            f"""
-            <div class="detail-card">
-                <b>Customer:</b> {selected_alert['CUSTOMER_ID']}<br>
-                <b>Item / Part:</b> {selected_alert['ITEM_ID']}<br>
-                <b>Request date:</b> {selected_alert['REQUEST_DATE']}<br>
-                <b>Severity:</b> {severity_pill(selected_alert['SEVERITY'])}
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        st.write("")
-
-        alert_reason = selected_alert.get("ALERT_REASON", "")
-
-        if pd.notna(alert_reason) and str(alert_reason).strip():
-            st.info(f"**Why this event was flagged:** {alert_reason}")
-
-        if pd.notna(mad) and mad == 0:
-            st.warning(
-                "Historical MAD is zero. The past intervals show no "
-                "median absolute deviation, so variability-based scores "
-                "should be interpreted cautiously."
+        if selected_rows and selected_rows[0] < len(display_df):
+            render_alert_investigation(
+                display_df.iloc[selected_rows[0]]
+            )
+        else:
+            st.write("")
+            st.info(
+                "No alert selected yet. Click a row in the table "
+                "to investigate it."
             )
 
-        st.caption(
-            "This alert is a candidate for investigation, not a confirmed "
-            "unnecessary purchase. The ranking score is heuristic, "
-            "not a probability."
-        )
-
 
 # --------------------------------------------------
-# TAB 4: EVENT INSPECTOR
+# TAB 3: EVENT INSPECTOR
 # --------------------------------------------------
 
 with tab_inspector:
