@@ -1,0 +1,11 @@
+sdg,indicator,baseline_or_reference,project_result,numerical_change,evidence_type,claim_supported
+SDG 12,Raw procurement records,0,285941,+285941 records analyzed,Observed dataset coverage,The system can analyze procurement history
+SDG 12,Customer-part groups,0,34664,+34664 groups profiled,Observed dataset coverage,The system provides customer-part purchasing-pattern analysis
+SDG 12,Temporal purchase events,0,136372,+136372 events generated,Observed pipeline output,The system creates repeatable historical interval evidence
+SDG 12,Eligible events with sufficient history,0,64892,+64892 events,Observed pipeline output,The system restricts screening to events with at least three prior intervals
+SDG 12,Alert volume at 50 percent threshold,19983,13861,-6122 alerts (-30.64%),Internal threshold comparison,The 30 percent rule reduces the review queue relative to the tested 50 percent rule
+SDG 12,Alert rate among eligible events,30.79%,21.36%,-9.43 percentage points,Internal threshold comparison,The selected rule produces a more targeted review population
+SDG 9,Median baseline controlled recall,0,0.999923,+0.999923,Controlled synthetic evaluation,The prototype detects injected early-reorder cases
+SDG 9,Median baseline controlled F1,0,0.879835,+0.879835,Controlled synthetic evaluation,The prototype has measurable benchmark performance
+SDG 12/9,Real procurement cost saving,Not available,Not measured,Not calculable,Missing field evaluation evidence,No real-world cost-reduction claim is supported
+SDG 12/9,Real waste or emissions reduction,Not available,Not measured,Not calculable,Missing field evaluation evidence,No real-world sustainability-impact claim is supported

@@ -1,0 +1,5 @@
+threshold_percent,eligible_events,flagged_events,alert_percentage,alert_reduction,alert_reduction_percent
+50.0,64892,19983,30.79,0,0.0
+40.0,64892,17217,26.53,2766,13.84
+30.0,64892,13861,21.36,6122,30.64
+20.0,64892,10234,15.77,9749,48.79
