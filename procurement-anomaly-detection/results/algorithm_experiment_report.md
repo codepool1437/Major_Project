@@ -64,16 +64,16 @@ reference group. The natural holdout is not proven normal.
 
 | Method | Parameter | Detection rate | Controlled precision |
 |---|---|---:|---:|
-| Median threshold | 50% | 99.99% | 78.55% |
-| Median threshold | 40% | 99.97% | 80.97% |
-| Median threshold | 30% | 99.63% | 83.73% |
+| Median threshold | 50% | 100.00% | 78.55% |
+| Median threshold | 40% | 100.00% | 80.98% |
+| Median threshold | 30% | 100.00% | 83.78% |
 | Median threshold | 20% | 0.00% | 0.00% |
 | Median-MAD | robust z >= 1 | 31.93% | 72.75% |
 | Median-MAD | robust z >= 2 | 13.48% | 73.28% |
 | Median-MAD | robust z >= 3 | 8.67% | 72.67% |
 | Median-MAD | robust z >= 4 | 6.66% | 71.96% |
 | Isolation Forest | training score 95th percentile | 7.24% | 52.31% |
-| LOF | 35 neighbors, training score 95th percentile | 12.03% | 57.43% |
+| LOF | 35 neighbors, training score 95th percentile | 12.03% | 57.45% |
 
 ## Ablation analysis
 

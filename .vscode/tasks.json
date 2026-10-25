@@ -1,0 +1,20 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run temporary paper figures app",
+			"type": "shell",
+			"command": ".venv\\Scripts\\python.exe",
+			"args": [
+				"-m",
+				"streamlit",
+				"run",
+				"procurement-anomaly-detection\\temporary_figures_app.py",
+				"--server.headless=true",
+				"--server.port=8512"
+			],
+			"isBackground": true,
+			"problemMatcher": []
+		}
+	]
+}
