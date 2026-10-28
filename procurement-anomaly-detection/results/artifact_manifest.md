@@ -44,6 +44,8 @@ identified with a new configuration or archived separately.
 - `sdg_evidence_mapping.csv`
 - `sdg_quantitative_evidence.csv`
 - `real_world_comparison_status.csv`
+- `minhist.csv`
+- `rolling_all.csv`
 
 ## Figures and interpretation
 
@@ -68,6 +70,7 @@ identified with a new configuration or archived separately.
 - `../src/phase3_comparative_analysis.py`
 - `../src/phase4_sdg_mapping.py`
 - `../src/audit_real_world_comparison.py`
+- `../src/robustness_experiments.py`
 
 ## Preservation note
 
@@ -75,4 +78,5 @@ The files listed here are the current retained artifacts. The clean Phase 2
 and Phase 3 outputs were regenerated from the current processed data and are
 documented in `algorithm_experiment_report.md`. The report records the
 configuration, denominators, split, synthetic construction, metrics, edge
-cases, limitations, and output filenames needed to interpret these artifacts.
+cases, limitations, robustness outputs, and output filenames needed to
+interpret these artifacts.

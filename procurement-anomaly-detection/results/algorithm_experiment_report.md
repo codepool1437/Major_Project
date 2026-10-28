@@ -38,6 +38,48 @@ Source: `src/compare_temporal_detectors.py`
 The synthetic intervals are now not clipped to one day. Therefore the
 injection ratios are exact, including for short historical medians.
 
+## Supplementary robustness experiments
+
+Source: `src/robustness_experiments.py`. The machine-readable outputs are
+`results/minhist.csv` and `results/rolling_all.csv`.
+
+The raw-file audit found 285,941 order-line records, 24,532 distinct orders,
+zero missing customer/item/date keys, and 76,549 same-day customer-part
+duplicates collapsed for event analysis. The six files contain 238 customers
+and 21,143 items. Only 95 customers have eligible events, and the ten most
+frequent alert customers account for 85.44% of alerts. The weekday distribution
+is highly non-uniform (277 Saturday events and 31,504 Sunday events), so dates
+are treated as an ordered timeline rather than as evidence of ordinary
+calendar-day behaviour.
+
+Minimum-history sensitivity is stable but not identical across settings:
+
+| Minimum history | Eligible events | Alerts | Alert rate |
+|---:|---:|---:|---:|
+| 2 | 79,944 | 17,192 | 21.51% |
+| 3 | 64,892 | 13,861 | 21.36% |
+| 5 | 46,248 | 9,769 | 21.12% |
+| 8 | 31,864 | 6,478 | 20.33% |
+| 12 | 21,848 | 4,287 | 19.62% |
+
+In the original chronological 80/20 split, the 30% rule detected 100.00% of
+the constructed 0.30-median cases. A budget-matched fixed-day rule detected
+22.28% under the same scenario. This comparison is a consistency check using
+synthetic injections, not evidence of real-world accuracy. For one-day
+injections, the fixed-day rule detected all cases while the median rule
+detected 99.77% in the five rolling-origin folds.
+
+Across the five rolling-origin folds, the 30% rule detected 100.00% of
+0.30-median injections, 46.26% of uniform 0.05--0.60-median injections,
+46.92% of multiplicatively shortened natural intervals, and 99.77% of
+one-day injections on average. These results depend on the constructed
+scenarios and should not be interpreted as expert-validated labels.
+
+Intervals crossing an annual source-file boundary represented 30.96% of
+eligible events and had a 1.58% alert rate, compared with 30.23% within a
+file. This difference should be confirmed with the dataset owners before
+making operational claims.
+
 ## Comparison results
 
 The complete machine-readable output is in

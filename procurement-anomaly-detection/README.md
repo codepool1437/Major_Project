@@ -70,11 +70,23 @@ python src/ablate_temporal_ranking.py
 python src/phase3_comparative_analysis.py
 python src/phase4_sdg_mapping.py
 python src/audit_real_world_comparison.py
+python src/robustness_experiments.py
 ```
 
 The retained outputs and figures are listed in
 `results/artifact_manifest.md`. The consolidated interpretation is in
 `results/algorithm_experiment_report.md`.
+
+The robustness script also audits raw-file hashes, duplicate order lines,
+same-day event collapsing, weekday/date distributions, customer
+concentration, year-boundary intervals, minimum-history sensitivity, a
+budget-matched fixed-day baseline, and five rolling-origin folds. It writes:
+
+- `results/minhist.csv`
+- `results/rolling_all.csv`
+
+Its injected cases are synthetic consistency checks and must not be presented
+as expert-validated anomaly labels.
 
 ## Launch the dashboard
 

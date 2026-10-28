@@ -141,12 +141,20 @@ python src/ablate_temporal_ranking.py
 python src/phase3_comparative_analysis.py
 python src/phase4_sdg_mapping.py
 python src/audit_real_world_comparison.py
+python src/robustness_experiments.py
 ```
 
 The retained artifact inventory is in
 [`procurement-anomaly-detection/results/artifact_manifest.md`](procurement-anomaly-detection/results/artifact_manifest.md).
 The consolidated interpretation is in
 [`procurement-anomaly-detection/results/algorithm_experiment_report.md`](procurement-anomaly-detection/results/algorithm_experiment_report.md).
+
+The robustness experiment additionally audits duplicate/order-line losses,
+date distributions, customer concentration, cross-year intervals,
+minimum-history sensitivity, a matched fixed-day baseline, and five
+rolling-origin folds. It writes `results/minhist.csv` and
+`results/rolling_all.csv`. Synthetic injections are consistency checks, not
+expert-validated anomaly labels.
 
 ## Important result files
 
@@ -158,6 +166,8 @@ The consolidated interpretation is in
 | `results/ablation_metrics.csv` | Ranking-component ablation results |
 | `results/sdg_evidence_mapping.csv` | Evidence mapping for SDG 12 and limited SDG 9 relevance |
 | `results/real_world_comparison_status.csv` | Audit of available real-world baseline/outcome evidence |
+| `results/minhist.csv` | Minimum-history sensitivity results |
+| `results/rolling_all.csv` | Fixed-day, injection-scenario, and rolling-origin robustness results |
 | `results/figures/threshold_vs_alert_volume.png` | Threshold sensitivity figure |
 | `results/figures/detector_metrics_comparison.png` | Detector comparison figure |
 
@@ -196,6 +206,10 @@ A healthy application returns HTTP 200 with the body `ok`.
 - The project therefore supports prioritised review and temporal-pattern
   analysis. It does not claim measured reductions in cost, waste, inventory,
   or emissions.
+- The robustness audit found strongly non-uniform weekday counts and substantial
+  customer concentration. Dates are therefore treated as an ordered timeline,
+  and alert concentration should be considered when interpreting aggregate
+  results.
 - SDG 12 is treated as the primary relevance connection, with SDG 9 as a
   limited secondary connection to data-driven industrial systems. Field
   evaluation with expert labels and before/after operational measurements
