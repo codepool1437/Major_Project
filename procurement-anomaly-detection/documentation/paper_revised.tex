@@ -1,0 +1,417 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{url}
+\usepackage{xcolor}
+
+\begin{document}
+
+\title{Screening for Unusually Early Reorders in B2B Procurement Using Customer--Part Purchase Intervals}
+
+\makeatletter
+\newcommand{\linebreakand}{%
+  \end{@IEEEauthorhalign}
+  \hfill\mbox{}\par
+  \mbox{}\hfill\begin{@IEEEauthorhalign}
+}
+\makeatother
+
+\author{
+\IEEEauthorblockN{Jaydip Chavan}
+\IEEEauthorblockA{\textit{Dept. of Computer Engineering} \\
+\textit{Vishwakarma Institute of Information Technology}\\
+Pune, India \\
+jaydip.22310913@viit.ac.in}
+\and
+\IEEEauthorblockN{Kaushal Borude}
+\IEEEauthorblockA{\textit{Dept. of Computer Engineering} \\
+\textit{Vishwakarma Institute of Information Technology}\\
+Pune, India \\
+kaushal.22310805@viit.ac.in}
+\linebreakand
+\IEEEauthorblockN{Anuj Khaire}
+\IEEEauthorblockA{\textit{Dept. of Computer Engineering} \\
+\textit{Vishwakarma Institute of Information Technology}\\
+Pune, India \\
+anuj.22311223@viit.ac.in}
+\and
+\IEEEauthorblockN{Devanshu Nirmal}
+\IEEEauthorblockA{\textit{Dept. of Computer Engineering} \\
+\textit{Vishwakarma Institute of Information Technology}\\
+Pune, India \\
+devanshu.22311264@viit.ac.in}
+}
+
+\maketitle
+
+\begin{abstract}
+Repeated procurement transactions carry timing information that can reveal unusually early replenishment, but purchase intervals differ widely across customer--part pairs, so a single global day threshold is unsuitable. This paper presents a screening pipeline that constructs inter-purchase intervals (IPIs) for each customer--part pair, derives historical statistics from earlier intervals only, and flags an interval as an early-reorder candidate when it is at most 30\% of the pair's historical median. On the public B2B-Parts-Rec dataset (285,941 order lines; 136,372 scored events, of which 64,892 have at least three prior intervals), the rule flagged 13,861 events (21.36\%). Because the dataset has no anomaly labels, detection was assessed with controlled synthetic injections over five expanding-window chronological folds and compared with a fixed-day baseline, a median--MAD rule, Isolation Forest, and Local Outlier Factor (LOF). The rule detected 100\% of injections built at its own ratio, which is a consistency check by construction, and none at an unseen ratio of 0.35. For shortening patterns not defined relative to the median, it detected 46.9\% (multiplicative shortening) and 99.8\% (one-day reorders), against 27.5\% and 100\% for a budget-matched fixed-day rule. None of these figures measures real-world anomaly accuracy. The contribution is an interpretable, auditable screening tool; validation against expert-labelled alerts remains future work.
+\end{abstract}
+
+\begin{IEEEkeywords}
+B2B procurement, early-reorder screening, inter-purchase interval, temporal anomaly detection, industrial procurement, median absolute deviation, unsupervised anomaly detection, Isolation Forest, Local Outlier Factor.
+\end{IEEEkeywords}
+
+\section{Introduction}
+Procurement systems generate repeated transactions for customers and parts over time. These records support more than demand-quantity forecasting: the time between consecutive purchases also reflects replenishment behaviour. Existing research has examined intermittent spare-part demand, procurement decision support, supply-chain risk, purchasing anomalies, and customer purchase behaviour \cite{kenaka2025,goldsmith2025,giannopoulos2025,balkan2025,spreitzenbarth2024}. These settings do not, however, necessarily identify an unusually early reorder for a specific customer--part pair.
+
+A global rule such as ``reorder within $k$ days'' can mislead because one part may be purchased daily while another is purchased only a few times a year. This paper therefore models the interval between successive purchase dates within each customer--part pair and compares the current interval with that pair's own history. Throughout, an \emph{early-reorder candidate} is an interval that satisfies the operational rule defined in Section~\ref{sec:problem}. Such a candidate is statistically short relative to the pair's history; whether it is operationally unnecessary, erroneous, or wasteful requires business context that the data do not contain. The output is therefore intended to prioritize events for human review, not to assert that an order is wrong.
+
+The study makes four contributions:
+\begin{itemize}
+    \item It formulates early-reorder screening as an interval problem on customer--part sequences, with explicit definitions of records, purchase events, and scored events.
+    \item It builds historical and recent features from intervals preceding the scored event only, and documents preprocessing losses, date semantics, and count discrepancies in the source data.
+    \item It evaluates the rule against a fixed-day baseline, a median--MAD rule, Isolation Forest, and LOF, using a single 80/20 split and five expanding-window chronological folds, with injection patterns that both match and differ from the detector's own construction.
+    \item It provides a reproducible Python pipeline and a Streamlit dashboard for ranking and inspecting candidates.
+\end{itemize}
+
+The research questions are: \textbf{RQ1}, does a customer--part-specific rule provide a more informative screening signal than a fixed-day rule at a comparable review volume; \textbf{RQ2}, how does the threshold affect review volume, and how stable is that volume across time and minimum-history requirements; and \textbf{RQ3}, how does the rule compare with statistical and unsupervised detectors under controlled injections that are not all matched to its construction? Because no expert-verified labels exist, claims about real operational performance are out of scope.
+
+\section{Related Work}
+\subsection{Spare-Part Demand Forecasting}
+Spare-parts procurement has been the subject of numerous studies on intermittent demand, life-cycle effects, data pooling, and feature engineering. Kenaka \textit{et al.} study an ensemble that combines focal loss and SMOTE for intermittent spare-part demand \cite{kenaka2025}; Goldsmith and Sachs analyse a data-pooling scheme based on the Bass life-cycle model \cite{goldsmith2025}; and Kuni\'c \textit{et al.} examine feature engineering with ABC--XYZ segmentation \cite{kunic2026}. Other work addresses long-term demand for end-of-life products and the contribution of feature engineering relative to model complexity \cite{nathan2026long,nathan2026feature}, and intermittent forecasting with large language models and other machine-learning methods \cite{nakhost2025,giannopoulos2025}. These studies provide a basis for handling sparse, irregular purchase data, but their primary target is demand quantity or forecast accuracy, not unusually short intervals within one customer--part history.
+
+\subsection{Procurement Analytics and Anomaly Detection}
+Machine learning has been applied to supplier selection, order allocation, and purchase decision support \cite{supplierallocation2025,balkan2025}. A separate line of research addresses fraud and corruption in public procurement \cite{schneider2025,ndolo2025}. Herreros-Mart\'inez \textit{et al.} propose a two-stage clustering and Isolation Forest approach for anomalies in enterprise purchase processes \cite{herreros2025}. These works use analytical methods similar to those studied here, but define anomalies more broadly; in the present study an event is screened because its interval is unusually short compared with the same customer--part history. Supplier-delay warning and supply-chain disruption prediction address related operational risks from the supplier side or the network level \cite{alaoua2025,xiaoyang2025,khaled2024,wyrembek2025,xia2026}. General surveys of anomaly detection \cite{chandola2009} frame temporal anomalies as observations that deviate from expected behaviour given context, which is the sense used here, with the pair's own earlier intervals as the context.
+
+\subsection{Customer Purchase Behaviour}
+Customer loyalty, lifetime value, consumer analytics, buying-habit prediction, and next-purchase timing have all been studied in the context of purchase behaviour \cite{roosta2025,wong2025,stylianou2025,wang2025,lou2026,simon2025}, as have B2B lead prioritization and purchase or churn prediction \cite{gonzalez2025,obrien2025}.
+
+\subsection{Comparison with the Closest Studies and Research Gap}
+Table~\ref{tab:related} compares the closest studies on task, output, and relation to the present work. The characterization of each study is based on its title and abstract; a full-text comparison of datasets, metrics, and baselines has not been completed and is listed as future work.
+
+\begin{table*}[t]
+\caption{Positioning against representative related studies (characterization from titles and abstracts)}
+\label{tab:related}
+\centering
+\footnotesize
+\begin{tabular}{p{2.4cm}p{4.6cm}p{3.0cm}p{5.8cm}}
+\toprule
+\textbf{Study} & \textbf{Stated task} & \textbf{Output type} & \textbf{Relation to this study}\\
+\midrule
+Kenaka \textit{et al.} \cite{kenaka2025}; Goldsmith and Sachs \cite{goldsmith2025} & Intermittent / life-cycle spare-part demand forecasting & Demand quantity & Complementary; forecasts quantity and does not screen interval length\\
+Giannopoulos \textit{et al.} \cite{giannopoulos2025} & Review of ML for intermittent demand & Forecasting review & Background on sparse purchase series\\
+Balkan and Akyuz \cite{balkan2025}; Spreitzenbarth \textit{et al.} \cite{spreitzenbarth2024} & Reviews of AI/ML in procurement and purchasing & Taxonomy and state of the art & Source for locating closer work; interval-level screening not examined here\\
+Schneider dos Santos \textit{et al.} \cite{schneider2025} & Mapping of fraud detection in public procurement & Fraud detection & Different target (fraud) and domain (public procurement)\\
+Herreros-Mart\'inez \textit{et al.} \cite{herreros2025} & Anomalies in enterprise purchase processes (clustering + Isolation Forest) & Transaction-level anomalies & Closest method family; Isolation Forest is used here as a baseline, not their full pipeline\\
+Khaled \textit{et al.} \cite{khaled2024}; Alaoua and Karim \cite{alaoua2025} & Early warning of supply-chain disruption / supplier delay & Risk prediction & Different event (disruption, delay) and side (supplier)\\
+\textbf{This study} & Screening of unusually short customer--part intervals & Ranked candidate list for review & Pair-specific past-only baseline with transparent rule\\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+The literature reviewed supports this formulation, but it does not establish that no earlier work has addressed an equivalent problem. The claim made here is therefore limited: the paper studies a narrower screening task than general anomaly detection or purchase prediction, and evaluates it directly against fixed-day, statistical, and unsupervised alternatives. Whether the formulation differs materially from existing transaction-level temporal methods requires the full-text comparison noted above.
+
+\subsection{National and International Status}
+Digital procurement platforms in India increasingly apply analytics to procurement records. AI and machine-learning functions on the Government e-Marketplace (GeM) have been reported to help detect patterns suggestive of cartelisation, collusion, or order splitting \cite{gem2026}, and studies of Indian manufacturing firms have examined links between AI, big-data analytics, supply-chain flexibility, and firm performance \cite{india2025}. Internationally, AI and machine learning have been reviewed across purchasing and supply management, including forecasting, supplier selection, order management, anomaly identification, and fraud detection \cite{spreitzenbarth2024,balkan2025}. The present work addresses a narrower objective than these: identifying unusually short reorder intervals per customer--part pair, not procurement fraud or demand quantity.
+
+\section{Problem Formulation}\label{sec:problem}
+\subsection{Units of analysis}
+A \emph{record} is one order line in the source files. A \emph{purchase event} is a distinct (customer, part, date) triple; several records of the same pair on the same date collapse into one purchase event, because they cannot produce a positive day-based interval. For a customer--part pair $g=(c,p)$ with sorted purchase dates $t_{g,1}<t_{g,2}<\dots$, the inter-purchase interval, in days, is
+\begin{equation}
+    IPI_{g,i}=t_{g,i}-t_{g,i-1},\quad i\geq 2.
+    \label{eq:ipi}
+\end{equation}
+Each purchase event with $i\geq2$ is a \emph{scored event}, identified with its interval $IPI_{g,i}$. Let $\mathcal{H}_{g,i}=\{IPI_{g,2},\dots,IPI_{g,i-1}\}$ be the intervals preceding it; the scored event never contributes to its own reference statistics. The historical median and median absolute deviation (MAD) \cite{rousseeuw1993} are
+\begin{align}
+    M_{g,i} &= \operatorname{median}(\mathcal{H}_{g,i}), \label{eq:median}\\
+    MAD_{g,i} &= \operatorname{median}_{x\in\mathcal{H}_{g,i}}|x-M_{g,i}|. \label{eq:mad}
+\end{align}
+A scored event is \emph{eligible} when $|\mathcal{H}_{g,i}|\geq3$, its interval and statistics are valid, and $M_{g,i}>0$. The screening rule flags an eligible event when
+\begin{equation}
+    IPI_{g,i} \leq \tau M_{g,i},
+    \label{eq:threshold}
+\end{equation}
+with $\tau=0.30$ the selected operating threshold. A flagged event is a candidate for review. It is not a confirmed anomaly and is not evidence of over-ordering.
+
+\subsection{Worked example}
+Consider a pair with purchase dates 2 Jan, 12 Jan, 24 Jan, 5 Feb, and 8 Feb (illustrative values). The intervals are $10, 12, 12$ and $3$ days. For the last event, $\mathcal{H}=\{10,12,12\}$, so $M=12$ and $MAD=\operatorname{median}(2,0,0)=0$. The threshold is $0.30\times12=3.6$ days and $3\leq3.6$, so the event is flagged (Fig.~\ref{fig:temporal}). Its ratio is $R=3/12=0.25$, which gives the earlyness $E=0.75$ defined below, a robust scale of $\max(1.4826\cdot0,1)=1$, $Q=(12-3)/1=9$, a ranking score $Z\approx0.734$, and the moderate severity band ($0.20<R\leq0.30$).
+
+\begin{figure}[t]
+\centering
+\IfFileExists{temporal_example.png}{\includegraphics[width=\columnwidth]{temporal_example.png}}{\fbox{\parbox[c][1.2in][c]{0.9\columnwidth}{\centering Add image: \texttt{temporal\_example.png}}}}
+\caption{Worked example for one customer--part pair (illustrative dates). The fifth purchase follows its predecessor after 3 days, below $0.30M=3.6$ days, and is flagged as a candidate.}
+\label{fig:temporal}
+\end{figure}
+
+\section{Dataset and Preprocessing}
+\subsection{Source and structure}
+The study uses B2B-Parts-Rec, an anonymized industrial procurement dataset hosted on Zenodo (DOI: 10.5281/zenodo.19492687) \cite{stefano2026dataset}, described as covering client companies in the food and beverage manufacturing sector across several continents. The project uses six semicolon-delimited files, one per year from 2024 to 2029. The pipeline reads the customer identifier, part identifier, and request date.
+
+\subsection{Date semantics}
+Each file contains dates only within its nominal calendar year (earliest 2024-01-02, latest 2029-12-20), and the files do not overlap. The 2027--2029 dates lie in the future relative to the study period, so they cannot be actual calendar dates. The weekday distribution of the 209,392 distinct purchase events is also inconsistent with a standard business calendar (Mon 44,633; Tue 41,125; Wed 41,686; Thu 36,535; Fri 13,632; Sat 277; Sun 31,504), which is consistent with shifted or synthetic dates. We therefore treat dates only as an ordered timeline in which day differences are meaningful, and we assume, without being able to verify it, that the shift preserves day differences within a file. Chronological evaluation in this paper means evaluation in order of the provided dates, not on a verified real-world calendar. The dataset documentation should be consulted to confirm this interpretation.
+
+\subsection{Counts and preprocessing losses}
+Table~\ref{tab:dataset} traces the counts through each stage. The 285,941 records correspond to 24,532 distinct order identifiers, so each record is an order line. No record lacked a customer, part, or date, so no rows were dropped for missing keys. Collapsing same-day duplicates removed 76,549 records (26.8\%). No interval was zero or negative (the minimum was 1 day), and no eligible event had $M_{g,i}=0$. The source description reports 219 client companies and 285,919 orders, whereas the files supplied contain 238 distinct customer identifiers and 285,941 records. We could not establish the cause of the 22-record difference; it may reflect a different dataset version or counting unit. We used the files as downloaded (SHA-256 prefixes: 468bc7307161, bad1e0bbff52, 968b58173f83, 3bf6806cbe84, 7bba1a7a86a2, 1a59d844247f for 2024--2029, in order).
+
+\begin{table}[t]
+\caption{Counts at each processing stage}
+\label{tab:dataset}
+\centering
+\footnotesize
+\begin{tabular}{lr}
+\toprule
+\textbf{Stage} & \textbf{Count}\\
+\midrule
+Raw order-line records & 285,941\\
+Records with a missing key & 0\\
+Same-day duplicates collapsed & 76,549\\
+Purchase events (customer--part--date) & 209,392\\
+Customer--part pairs & 73,020\\
+Pairs with at least two purchase dates & 34,664\\
+Scored events (intervals) & 136,372\\
+Eligible events ($\geq$3 prior intervals) & 64,892\\
+Eligible pairs / customers & 10,769 / 95\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Only 95 of the 238 customers contribute eligible events, so results describe a subset of the customer base. The raw record, purchase event, scored event, and eligible event counts refer to different stages and are not interchangeable denominators. A further data-structure effect should be noted: 31.0\% of eligible intervals span two annual files, and the 30\% rule flags only 1.58\% of these against 30.23\% of within-file intervals. Intervals that cross a year boundary are long and therefore rarely short relative to the median, but this should be confirmed with the dataset authors.
+
+\section{Proposed Method}
+\subsection{Past-Only Temporal Features}
+In addition to $IPI_{g,i}$, the pipeline computes the ratio of the current interval to the historical median,
+\begin{equation}
+    R_{g,i}=\frac{IPI_{g,i}}{M_{g,i}},
+    \label{eq:ratio}
+\end{equation}
+the median of up to the three preceding intervals (recent median), the ratio to that recent median, and the history count. Customer and part identifiers define groups and are not used as numeric detector features. All statistics use preceding intervals only. The minimum-history requirement of three intervals ensures that $M$ is not computed from a single observation; Section~\ref{sec:minhist} reports its effect.
+
+\subsection{Median-Threshold Rule}
+The primary detector is Eq.~\eqref{eq:threshold}. A sweep over $\tau\in\{0.50,0.40,0.30,0.20\}$ quantifies how strictness affects alert volume. The value $\tau=0.30$ was selected as the prototype operating point based on alert volume and early controlled experiments; it is not shown to be optimal and no expert feedback was used to choose it.
+
+\subsection{Robust Score, Ranking, and Severity}
+The earlyness component is
+\begin{equation}
+    E_{g,i}=\max(0,\min(1,1-R_{g,i})).
+    \label{eq:earlyness}
+\end{equation}
+The robust scale is floored at one day to avoid division by zero when the MAD is zero:
+\begin{equation}
+    S_{g,i}=\max(1.4826\,MAD_{g,i},1),
+    \label{eq:scale}
+\end{equation}
+where 1.4826 makes the MAD consistent with the standard deviation under normality. The floor matters rarely: $MAD=0$ for only 0.18\% of eligible events and 0.06\% of alerts. The robust early score is $Q_{g,i}=\max(0,(M_{g,i}-IPI_{g,i})/S_{g,i})$, and the dashboard's heuristic ranking score is
+\begin{equation}
+    Z_{g,i}=0.70E_{g,i}+0.30\frac{\log(1+Q_{g,i})}{1+\log(1+Q_{g,i})}.
+    \label{eq:rank}
+\end{equation}
+This score is a heuristic, not a probability, and Section~\ref{sec:ranking} shows that it has not been validated. Rule-based severity bands are assigned from $R$: very high for $R\leq0.10$, high for $0.10<R\leq0.20$, and moderate for $0.20<R\leq0.30$. They are not calibrated against business impact.
+
+\subsection{Comparison Detectors}
+Four alternatives are compared, all using the same features and training partition. (i)~A \emph{fixed-day} rule flags $IPI\leq d$ days; $d$ is either fixed (7 or 14 days) or chosen on the training partition so that its alert rate equals that of the 30\% rule (the \emph{budget-matched} variant). (ii)~The \emph{median--MAD} rule flags $(M-IPI)/S\geq z$ with $z\in\{1,2,3,4\}$. (iii)~\emph{Isolation Forest} \cite{liu2008} uses 200 trees, contamination 0.05, and seed 42. (iv)~\emph{LOF} \cite{breunig2000} uses 35 neighbours in novelty mode. For the two unsupervised detectors, missing values are imputed with training medians, the decision cutoff is the 95th percentile of training scores, and an event is flagged only if its interval is below the historical median, so that long intervals are not reported as early. Feature scaling was not applied, and only these parameter settings were evaluated; no hyper-parameter search was run, so the unsupervised baselines may be under-tuned.
+
+\subsection{Prototype Workflow}\label{sec:workflow}
+Fig.~\ref{fig:architecture} shows the architecture. Operational screening comprises loading and cleaning the six files, building purchase events and past-only features, applying the 30\% rule, and exposing candidates in a Streamlit dashboard with filtering, event details, and the pair's purchase history. The dashboard does not modify or cancel orders. A separate offline evaluation module (threshold sweep, controlled injections, detector comparison) is kept apart from the operational path so that experimental constructions never influence the screening output.
+
+\begin{figure*}[!t]
+\centering
+\IfFileExists{system_architecture.png}{\includegraphics[width=0.96\textwidth]{system_architecture.png}}{\fbox{\parbox[c][1.05in][c]{0.92\textwidth}{\centering Add image: \texttt{system\_architecture.png}}}}
+\caption{System architecture. The operational path (data acquisition, feature engineering, detection, dashboard) is separate from the offline evaluation path (threshold sweep, controlled injections, detector comparison).}
+\label{fig:architecture}
+\end{figure*}
+
+\subsection{Implementation and Reproducibility}
+The pipeline was implemented in Python 3.13 with pandas 3.0.5, NumPy 2.5.3, SciPy 1.18.1, and scikit-learn 1.9.1 \cite{pedregosa2011}; all reported results were reproduced with these versions. Random seeds are fixed (42). The code, intermediate files, and result tables are in the project repository (\url{https://github.com/codepool1437/Major_Project}, branch \texttt{dataset-inspection}). Isolation Forest scores depend on the library version and on the ordering of same-date events, so small differences (a few tenths of a percentage point) may occur on other versions.
+
+\section{Experimental Design}
+\subsection{Chronological Evaluation}
+Eligible events are sorted by request date. Features are past-only by construction, so a split by date does not leak later intervals into earlier statistics. Two protocols are used, following the rolling-origin idea for temporal data \cite{bergmeir2012}.
+\begin{itemize}
+    \item \textbf{Single split:} the first 80\% (51,913 events) forms the training partition and the last 20\% (12,979 events) the holdout.
+    \item \textbf{Expanding-window folds:} five folds in which the training set is the first 50, 60, 70, 80, or 90\% of events and the test set is the next 10\% (about 6,490 events each). Fold-level results are reported as mean $\pm$ standard deviation over the five folds; with $n=5$ this is descriptive and not a significance test.
+\end{itemize}
+Training partitions are used only to fit the unsupervised detectors, to impute missing values, and to pick the budget-matched fixed-day value.
+
+\subsection{Controlled Injection Scenarios}
+No label identifies genuine early-reorder anomalies. Controlled cases are therefore built by copying every natural test event and altering the copy's interval; the history features are unchanged. The scenarios are:
+\begin{itemize}
+    \item \textbf{A (matched):} $IPI=0.30M$. This equals the detector's threshold, so detection by the 30\% rule is expected by construction; it is a consistency check, not evidence of generalization.
+    \item \textbf{B (unseen ratio):} $IPI=0.35M$ and $0.25M$, which straddle the operating threshold.
+    \item \textbf{C (random ratio):} $IPI=uM$ with $u\sim\mathcal{U}(0.05,0.60)$.
+    \item \textbf{D (multiplicative):} $IPI=0.3\times$ the event's own natural interval, which is not defined relative to $M$.
+    \item \textbf{E (one-day reorder):} $IPI=1$ day, an absolute pattern independent of the pair's history.
+\end{itemize}
+\emph{Detection} is the fraction of injected copies flagged. \emph{Natural alert rate} is the fraction of unmodified test events flagged. \emph{Controlled precision} is $TP/(TP+FP)$, where $TP$ counts flagged injected copies and $FP$ counts flagged natural events; because the two groups have equal size, it equals the precision at 50\% prevalence. Natural events are not verified normal cases and the injected cases are not real anomalies, so none of these quantities is an estimate of real-world precision, recall, or false-positive rate.
+
+\section{Results and Comparative Analysis}
+\subsection{Threshold Sensitivity}
+Table~\ref{tab:threshold} reports the threshold sweep on the full eligible population of 64,892 events. A stricter threshold produces fewer alerts. The 30\% rule flags 13,861 events (21.36\%); relative to the 50\% rule, which flags 19,983, this is 6,122 fewer alerts, a 30.64\% reduction in review volume. This is a reduction in events sent for review, not evidence that false positives were removed.
+
+\begin{table}[t]
+\caption{Threshold sensitivity on the eligible population (64,892 events)}
+\label{tab:threshold}
+\centering
+\footnotesize
+\begin{tabular}{rrrr}
+\toprule
+\textbf{Threshold} & \textbf{Flagged} & \textbf{Alert rate} & \textbf{Reduction vs. 50\%}\\
+\midrule
+50\% & 19,983 & 30.79\% & 0.00\%\\
+40\% & 17,217 & 26.53\% & 13.84\%\\
+30\% & 13,861 & 21.36\% & 30.64\%\\
+20\% & 10,234 & 15.77\% & 48.79\%\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Alerts are concentrated: they fall on 5,640 pairs and 78 customers, and ten customers account for 85.4\% of them. Review workload would therefore be dominated by a few high-frequency accounts, which affects both deployment and the generality of the results.
+
+\subsection{Minimum-History Sensitivity}\label{sec:minhist}
+Table~\ref{tab:minhist} varies the minimum number of prior intervals. Requiring more history shrinks the eligible population sharply (from 79,944 to 21,848 events and from 15,052 to 1,685 pairs) while the 30\% alert rate stays between 19.6\% and 21.5\%. The choice of three prior intervals therefore trades coverage for baseline stability without materially changing the alert rate.
+
+\begin{table}[t]
+\caption{Effect of the minimum-history requirement (30\% rule)}
+\label{tab:minhist}
+\centering
+\footnotesize
+\begin{tabular}{rrrrr}
+\toprule
+\textbf{Min. prior} & \textbf{Eligible} & \textbf{Pairs} & \textbf{Alerts} & \textbf{Rate}\\
+\midrule
+2 & 79,944 & 15,052 & 17,192 & 21.51\%\\
+3 & 64,892 & 10,769 & 13,861 & 21.36\%\\
+5 & 46,248 & 5,933 & 9,769 & 21.12\%\\
+8 & 31,864 & 3,157 & 6,478 & 20.33\%\\
+12 & 21,848 & 1,685 & 4,287 & 19.62\%\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Detector Comparison on the Single Split}
+Table~\ref{tab:detectors} reports scenario~A (injection at $0.30M$) on the 80/20 holdout. The natural alert rate of the 30\% rule is 19.35\% on the 12,979 holdout events, against 21.36\% on the full eligible population; the two use different populations. The 30\% rule has the highest detection and controlled precision, but its 100\% detection is expected by construction. The 20\% rule detects nothing because the injected ratio (0.30) exceeds its threshold (0.20); this zero is a property of that rule and scenario and does not indicate a reporting error. A lower natural alert rate should not be read as better real-world precision. The budget-matched fixed-day rule (flagging $IPI\leq11$ days, chosen on the training partition) has a natural alert rate of 18.70\%, close to that of the 30\% rule, yet detects 22.28\% of matched injections.
+
+\begin{table}[t]
+\caption{Controlled comparison, scenario A, 80/20 holdout}
+\label{tab:detectors}
+\centering
+\footnotesize
+\begin{tabular}{lrrr}
+\toprule
+\textbf{Method} & \textbf{Detection} & \textbf{Precision} & \textbf{Natural alert}\\
+\midrule
+Median threshold, 50\% & 100.00\% & 78.55\% & 27.31\%\\
+Median threshold, 40\% & 100.00\% & 80.98\% & 23.49\%\\
+Median threshold, 30\% & 100.00\% & 83.78\% & 19.35\%\\
+Median threshold, 20\% & 0.00\% & 0.00\% & 14.95\%\\
+Fixed-day, $\leq$7 d & 17.22\% & 54.31\% & 14.48\%\\
+Fixed-day, $\leq$14 d & 26.74\% & 55.79\% & 21.19\%\\
+Fixed-day, $\leq$11 d (matched) & 22.28\% & 54.37\% & 18.70\%\\
+Median--MAD, $z\geq1$ & 31.93\% & 72.75\% & 11.96\%\\
+Median--MAD, $z\geq2$ & 13.48\% & 73.28\% & 4.92\%\\
+Median--MAD, $z\geq3$ & 8.67\% & 72.67\% & 3.26\%\\
+Median--MAD, $z\geq4$ & 6.66\% & 71.96\% & 2.60\%\\
+Isolation Forest & 7.24\% & 52.31\% & 6.60\%\\
+LOF & 12.03\% & 57.45\% & 8.91\%\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Temporal Stability and Unseen Injection Patterns}
+Table~\ref{tab:rolling} reports detection over the five expanding-window folds for scenarios A--E. The natural alert rate of the 30\% rule varies between 16.95\% and 23.86\% across folds (mean 19.45\%), so review volume is moderately sensitive to the evaluation period; the budget-matched fixed-day value $d$ ranges from 8 to 11 days across folds.
+
+\begin{table*}[t]
+\caption{Detection rate (\%), mean $\pm$ s.d. over five expanding-window folds, by injection scenario}
+\label{tab:rolling}
+\centering
+\footnotesize
+\begin{tabular}{lrrrrrr}
+\toprule
+\textbf{Method} & \textbf{Natural alert} & \textbf{A: $0.30M$} & \textbf{B: $0.35M$} & \textbf{C: $\mathcal{U}(0.05,0.60)M$} & \textbf{D: $0.3\times IPI$} & \textbf{E: 1 day}\\
+\midrule
+Median threshold, 30\% & 19.45 $\pm$ 2.68 & 100.00 $\pm$ 0.00 & 0.00 $\pm$ 0.00 & 46.35 $\pm$ 0.00 & 46.93 $\pm$ 2.70 & 99.80 $\pm$ 0.25\\
+Fixed-day (budget-matched) & 15.11 $\pm$ 5.99 & 20.31 $\pm$ 5.77 & 18.50 $\pm$ 5.82 & 25.26 $\pm$ 5.16 & 27.54 $\pm$ 4.94 & 100.00 $\pm$ 0.00\\
+Median--MAD, $z\geq1$ & 12.12 $\pm$ 2.34 & 30.28 $\pm$ 3.54 & 27.09 $\pm$ 3.45 & 29.90 $\pm$ 3.56 & 29.42 $\pm$ 4.74 & 51.20 $\pm$ 5.01\\
+Isolation Forest & 5.55 $\pm$ 0.99 & 5.75 $\pm$ 0.99 & 5.97 $\pm$ 0.95 & 6.09 $\pm$ 0.99 & 6.17 $\pm$ 1.02 & 7.53 $\pm$ 1.62\\
+LOF & 8.03 $\pm$ 0.90 & 12.38 $\pm$ 0.90 & 12.31 $\pm$ 0.90 & 11.77 $\pm$ 1.19 & 10.59 $\pm$ 1.41 & 15.84 $\pm$ 2.85\\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+Four observations follow. First, the 30\% rule's response is a step function of the injected ratio: 100\% at $0.30M$ (and $0.25M$) and 0\% at $0.35M$, which shows that its high scenario-A detection reflects the definition of the threshold. Second, for random ratios the rule detects 46.35\%, which matches the share of the ratio range $(0.05,0.60)$ lying at or below 0.30 (about 45\%). Third, for multiplicative shortening (D) the rule detects 46.9\% against 27.5\% for the budget-matched fixed-day rule; the pair-specific baseline therefore detects more of these injections at a higher natural alert rate (19.45\% against 15.11\%), so this comparison is not at an exactly equal budget. Fourth, for one-day reorders (E) the fixed-day rule detects all injections and the 30\% rule detects 99.8\%; the fixed-day rule is as effective as the pair-specific rule when the anomaly is an absolute short interval. Isolation Forest and LOF detect little in every scenario, but they were not tuned and their alert budgets (5.6--8.0\%) are lower. Controlled precision in the folds follows the same ordering: for scenario A it is 83.75\% $\pm$ 1.85 for the 30\% rule, 57.98\% $\pm$ 7.92 for the matched fixed-day rule, 71.58\% $\pm$ 2.55 for median--MAD, 50.92\% $\pm$ 2.60 for Isolation Forest, and 60.69\% $\pm$ 3.02 for LOF. These results address RQ1 only partly: the pair-specific rule is more informative than a fixed-day rule for relative shortening, not for absolute short intervals, and no real labels confirm that either pattern is operationally meaningful.
+
+\subsection{Ranking Heuristic}\label{sec:ranking}
+Table~\ref{tab:ablation} repeats the ranking ablation at scenario A, with alert membership fixed by the 30\% rule. All injected cases have $R=0.30$, the weakest ratio in the alert band, so any ratio-based ranker (threshold-only, earlyness-only) necessarily places them below natural alerts with $R<0.30$. The near-zero Recall@150 of these rankers is therefore a consequence of the design, not evidence about their usefulness. Robust-only ranking reaches 0.92\% because it also uses the MAD scale, and the 70/30 composite scores 0.00\%. The ablation cannot show that the composite improves prioritization; it is also uninformative about whether ratio-only ranking is adequate. We therefore report the composite as an unvalidated dashboard heuristic. The transparent ratio $R$ is a defensible default ordering, but validating any ranking requires expert-ranked alerts or labelled outcomes, which we do not have.
+
+\begin{table}[t]
+\caption{Ranking ablation, scenario A, 80/20 holdout}
+\label{tab:ablation}
+\centering
+\footnotesize
+\begin{tabular}{lrr}
+\toprule
+\textbf{Ranking method} & \textbf{Detection rate} & \textbf{Recall@150}\\
+\midrule
+Threshold only & 100.00\% & 0.00\%\\
+Earlyness only & 100.00\% & 0.00\%\\
+Robust only & 100.00\% & 0.92\%\\
+Combined 70/30 & 100.00\% & 0.00\%\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Dashboard}
+The dashboard is an interface for exploring flagged events, filtering the candidate list, and inspecting an event next to its customer--part history (Fig.~\ref{fig:dashboard}). It shows eligible-event and alert counts and alert distributions. It demonstrates how screening output can be made reviewable at event level; its visual presentation is not evidence of model validity, and every displayed alert is a candidate requiring review.
+
+\begin{figure*}[!t]
+\centering
+\IfFileExists{dashboard_overview.png}{\includegraphics[width=0.96\textwidth]{dashboard_overview.png}}{\fbox{\parbox[c][1.0in][c]{0.92\textwidth}{\centering Add image: \texttt{dashboard\_overview.png}}}}
+\caption{Streamlit dashboard for reviewing candidate early-reorder events, with eligible-event and alert counts, alert distributions, and navigation for event-level investigation.}
+\label{fig:dashboard}
+\end{figure*}
+
+\section{Discussion and Limitations}
+\textbf{Findings.} The pair-specific median rule is simple, auditable, and gives direct control over review volume (RQ2): the alert rate falls from 30.79\% to 15.77\% across the threshold sweep, and it stays near 20--21\% across minimum-history settings. Against a fixed-day rule at a similar alert budget it detects more relatively shortened intervals (scenarios A--D) and equals it for one-day reorders (scenario E). Its large advantages in scenarios A and B should not be interpreted as generalization, because they are determined by the relation between the injected ratio and $\tau$.
+
+\textbf{Limitations.} (1)~No expert-verified labels exist, so real-world precision, recall, and false-positive rates are unknown. (2)~Injected cases are mathematical constructions and cannot represent all operational reasons for early purchasing, such as promotions, stock-outs, project demand, or batch consolidation. (3)~Dates appear shifted or synthetic, and 31\% of eligible intervals cross file boundaries, so chronological conclusions rest on the assumption that the provided order is meaningful. (4)~The five folds overlap in their training data and are few, so the reported spread is descriptive. (5)~Only 95 of 238 customers are eligible and ten account for 85.4\% of alerts. (6)~The threshold $\tau=0.30$ and the three-interval minimum were not validated against outcomes. (7)~The Isolation Forest and LOF baselines used a single parameter setting. (8)~The ranking composite is unvalidated. (9)~The record-count difference with the source documentation (22 records) is unresolved. (10)~No procurement savings, inventory effects, waste, or emissions were measured.
+
+\textbf{Sustainability relevance.} The method could support SDG~12 by providing a repeatable signal for reviewing replenishment patterns, and SDG~9 as an example of data-driven process analytics. These are potential applications only. The scope of this study is alert screening; the reduction in alerts under stricter thresholds is not a measure of reduced waste or resource use, and no sustainability impact is claimed.
+
+\section{Conclusion and Future Work}
+This paper presented a customer--part-specific screening pipeline for unusually short inter-purchase intervals in B2B procurement. From 285,941 order lines it produced 136,372 scored events and 64,892 eligible events, and the 30\% historical-median rule flagged 13,861 (21.36\%), 30.64\% fewer than the 50\% rule. In controlled injections over five chronological folds, the rule detected 100\% of cases built at its own ratio but none at a 0.35 ratio, and for patterns not defined relative to its threshold it detected 46.9\% (multiplicative shortening) and 99.8\% (one-day reorders), compared with 27.5\% and 100\% for a budget-matched fixed-day rule. These are results on constructed cases and unlabelled data, not real-world accuracy.
+
+Future work includes review of sampled alerts by procurement experts using documented criteria, confirmation of the dataset's date semantics and record counts with its authors, a full-text comparison with the closest anomaly-detection studies, tuned Isolation Forest and LOF baselines under equal review budgets, evaluation of redesigned ranking scores against expert judgments, and field evaluation with outcome data before any claim about cost, over-ordering, waste, or emissions.
+
+\begin{thebibliography}{00}
+\bibitem{kenaka2025} S. P. Kenaka, A. Cakravastia, A. Ma'ruf, and R. T. Cahyono, ``Enhancing Intermittent Spare Part Demand Forecasting: A Novel Ensemble Approach with Focal Loss and SMOTE,'' \textit{Logistics}, vol. 9, no. 1, p. 25, 2025, doi: 10.3390/logistics9010025.
+\bibitem{goldsmith2025} R. L. Goldsmith and A.-L. Sachs, ``Spare Part Demand Forecasting in Every Phase: A Data Pooling Approach to the Bass Life Cycle Model,'' \textit{International Journal of Production Research}, 2025, doi: 10.1080/00207543.2025.2607643.
+\bibitem{giannopoulos2025} P. G. Giannopoulos, T. K. Dasaklis, I. Tsantilis, and C. Patsakis, ``Machine Learning Algorithms in Intermittent Demand Forecasting: A Review,'' \textit{International Journal of Production Research}, 2025, doi: 10.1080/00207543.2025.2578701.
+\bibitem{balkan2025} D. Balkan and G. A. Akyuz, ``Artificial Intelligence (AI) and Machine Learning (ML) in Procurement and Purchasing Decision-Support (DS): A Taxonomic Literature Review and Research Opportunities,'' \textit{Artificial Intelligence Review}, vol. 58, p. 341, 2025, doi: 10.1007/s10462-025-11336-1.
+\bibitem{spreitzenbarth2024} J. M. Spreitzenbarth, C. Bode, and H. Stuckenschmidt, ``Artificial Intelligence and Machine Learning in Purchasing and Supply Management: A Mixed-Methods Review of the State-of-the-Art in Literature and Practice,'' \textit{Journal of Purchasing and Supply Management}, vol. 30, no. 1, p. 100896, 2024, doi: 10.1016/j.pursup.2024.100896.
+\bibitem{kunic2026} Z. Kuni\'c, V. Daki\'c, A. Radovan, and F. Furko, ``Derived Feature Engineering and ABC--XYZ Segmentation for Machine Learning-Based Forecasting of Intermittent Spare Parts Demand,'' \textit{Applied Sciences}, vol. 16, no. 12, p. 5804, 2026, doi: 10.3390/app16125804.
+\bibitem{nathan2026long} S. Nathan, B. V. S. Reddy, V. S. S. Sujan, C. C. Sastry, J. Krishnaiah, and S. Jitpichitchai, ``A Machine Learning Framework for Long-Term Forecasting of Spare Part Demand in End-of-Life Product Scenarios,'' \textit{Scientific Reports}, vol. 16, p. 1394, 2026, doi: 10.1038/s41598-025-31171-2.
+\bibitem{nathan2026feature} B. S. Nathan, P. M. Aravinth, B. V. S. Reddy, C. C. Sastry, S. Salunkhe, and R. Cep, ``Primacy of Feature Engineering Over Architectural Complexity for Intermittent Demand Forecasting,'' \textit{Scientific Reports}, vol. 16, p. 4792, 2026, doi: 10.1038/s41598-026-35197-y.
+\bibitem{nakhost2025} M. Abbaszadeh Nakhost, A. Bloemer, and S. Minner, ``Full Automation or Just a Copilot? A Study of Large Language Models on Spare Parts Demand Forecasting with OpenAI o1-mini,'' \textit{International Journal of Production Research}, 2025, doi: 10.1080/00207543.2025.2591225.
+\bibitem{supplierallocation2025} E. N. Hayati, W. A. Jauhari, R. W. Damayanti, and C. N. Rosyidi, ``An integrated analytics model for supplier selection and order allocation with machine learning and multi-criteria optimization,'' \textit{Decision Analytics Journal}, vol. 16, art. no. 100599, 2025, doi: 10.1016/j.dajour.2025.100599.
+\bibitem{schneider2025} E. Schneider dos Santos, M. Machado dos Santos, M. Castro, \textit{et al.}, ``Detection of Fraud in Public Procurement Using Data-Driven Methods: A Systematic Mapping Study,'' \textit{EPJ Data Science}, vol. 14, p. 52, 2025, doi: 10.1140/epjds/s13688-025-00569-3.
+\bibitem{ndolo2025} M. Ndolo, A. Wanjoya, and P. Kasyoka, ``A Hybrid Machine Learning Model for Detecting and Preventing Corruption in Kenya's Public Procurement Contracts,'' \textit{Machine Learning Research}, vol. 10, no. 2, pp. 131--136, 2025, doi: 10.11648/j.mlr.20251002.14.
+\bibitem{herreros2025} A. Herreros-Mart\'inez, R. Magdalena-Benedicto, J. Vila-Franc\'es, A. J. Serrano-L\'opez, S. P\'erez-D\'iaz, and J. J. Mart\'inez-Herr\'aiz, ``Applied Machine Learning to Anomaly Detection in Enterprise Purchase Processes: A Hybrid Approach Using Clustering and Isolation Forest,'' \textit{Information}, vol. 16, no. 3, p. 177, 2025, doi: 10.3390/info16030177.
+\bibitem{alaoua2025} A. Alaoua and M. Karim, ``Intelligent Early Warning System for Supplier Delays Using Dynamic IoT-Calibrated Probabilistic Modeling in Smart Engineer-to-Order Supply Chains,'' \textit{Applied System Innovation}, vol. 8, no. 5, p. 124, 2025, doi: 10.3390/asi8050124.
+\bibitem{xiaoyang2025} C. Xiaoyang, ``Explainable Dual LSTM-Autoencoders with Exogenous Features for Anomaly Detection and Supply Chain Forecasting,'' \textit{Scientific Reports}, vol. 15, p. 42371, 2025, doi: 10.1038/s41598-025-26449-4.
+\bibitem{khaled2024} M. A. Khaled, M. Nadeem, A. G. E. H. A. Mansour, A. A. M. Kulfod, and M. A. Aziz, ``Machine Learning Approaches for Early Prediction of Supply-Chain Disruptions and Operational Risks,'' \textit{Journal of Information Systems Engineering and Management}, vol. 9, no. 4s, pp. 4137--4148, 2024, doi: 10.52783/jisem.v9i4s.14812.
+\bibitem{wyrembek2025} M. Wyrembek, G. Baryannis, and A. Brintrup, ``Causal Machine Learning for Supply Chain Risk Prediction and Intervention Planning,'' \textit{International Journal of Production Research}, vol. 63, no. 15, pp. 5629--5648, 2025, doi: 10.1080/00207543.2025.2458121.
+\bibitem{xia2026} H. Xia, S. Sani, J. Milisavljevic-Syed, and K. Salonitis, ``Integrated Machine Learning Model for Managing Customer-Driven End-to-End Supply Chain Uncertainty,'' \textit{International Journal of Production Research}, 2026, doi: 10.1080/00207543.2026.2648764.
+\bibitem{roosta2025} S. Roosta, S. J. Sadjadi, and A. Makui, ``Predicting Customer Loyalty in Omnichannel Retailing Using Purchase Behavior, Socio-Cultural Factors, and Learning Techniques,'' \textit{PLOS ONE}, vol. 20, no. 8, p. e0330338, 2025, doi: 10.1371/journal.pone.0330338.
+\bibitem{wong2025} A. Wong, A. Viloria Garcia, and Y.-W. Lim, ``A Data-Driven Approach to Customer Lifetime Value Prediction Using Probability and Machine Learning Models,'' \textit{Decision Analytics Journal}, vol. 16, p. 100601, 2025, doi: 10.1016/j.dajour.2025.100601.
+\bibitem{stylianou2025} T. Stylianou and A. Pantelidou, ``A Machine Learning Approach to Consumer Behavior in Supermarket Analytics,'' \textit{Decision Analytics Journal}, vol. 16, p. 100600, 2025, doi: 10.1016/j.dajour.2025.100600.
+\bibitem{wang2025} Z. Wang, ``The Application of Deep Learning in User Purchase Behaviour Analysis and Marketing Decision Support,'' \textit{International Journal of Computational Intelligence Systems}, vol. 18, p. 253, 2025, doi: 10.1007/s44196-025-00954-w.
+\bibitem{lou2026} Z. Lou, S. Wang, X. Yu, and W. Song, ``Predicting Customer Buying Habits Using Convolutional Neural Network,'' \textit{Journal of Big Data}, vol. 13, p. 122, 2026, doi: 10.1186/s40537-026-01464-y.
+\bibitem{simon2025} L. Simon, ``A Generalised Comparison of Pareto/NBD Based Forecasts Using MCMC, Maximum Likelihood, and Heuristics,'' \textit{Journal of Business Economics}, vol. 95, pp. 1079--1105, 2025, doi: 10.1007/s11573-025-01237-8.
+\bibitem{gonzalez2025} L. Gonz\'alez-Flores, J. Rubiano-Moreno, and G. Sosa-G\'omez, ``The Relevance of Lead Prioritization: A B2B Lead Scoring Model Based on Machine Learning,'' \textit{Frontiers in Artificial Intelligence}, vol. 8, p. 1554325, 2025, doi: 10.3389/frai.2025.1554325.
+\bibitem{obrien2025} D. O'Brien and R. E. Kunz, ``Will They Stay or Will They Go? Application of Machine Learning Classifiers of Purchase and Churn Prediction to a Digital Journalistic Platform,'' \textit{Journal of Media Business Studies}, vol. 22, no. 3, pp. 237--265, 2025, doi: 10.1080/16522354.2024.2444075.
+\bibitem{gem2026} Ministry of Commerce and Industry, ``GeM completes a decade of transforming public procurement with cumulative GMV exceeding Rs. 20 lakh crore,'' Press Information Bureau (PIB), Delhi, Aug. 7, 2026. [Online]. Available: https://www.pib.gov.in/PressReleasePage.aspx?PRID=2296138 (Accessed on: Oct. 25, 2026).
+\bibitem{india2025} V. S. Narwane and P. Priyadarshinee, ``Examining the effect of AI-BDA on manufacturing firm performance: An Indian approach,'' \textit{International Journal of Information Management Data Insights}, vol. 5, art. no. 100306, 2025, doi: 10.1016/j.jjimei.2024.100306.
+\bibitem{stefano2026dataset} F. Stefano, F. Zanichelli, and D. Jannach, ``B2B-Parts-Rec: A Novel Dataset to Study Business-to-Business Recommendation Problems,'' Zenodo, Apr. 2026, doi: 10.5281/zenodo.19492687. [Online]. Available: https://zenodo.org/records/19492687
+\bibitem{chandola2009} V. Chandola, A. Banerjee, and V. Kumar, ``Anomaly detection: A survey,'' \textit{ACM Computing Surveys}, vol. 41, no. 3, art. 15, 2009, doi: 10.1145/1541880.1541882.
+\bibitem{rousseeuw1993} P. J. Rousseeuw and C. Croux, ``Alternatives to the median absolute deviation,'' \textit{Journal of the American Statistical Association}, vol. 88, no. 424, pp. 1273--1283, 1993, doi: 10.1080/01621459.1993.10476408.
+\bibitem{liu2008} F. T. Liu, K. M. Ting, and Z.-H. Zhou, ``Isolation forest,'' in \textit{Proc. IEEE Int. Conf. Data Mining (ICDM)}, 2008, pp. 413--422, doi: 10.1109/ICDM.2008.17.
+\bibitem{breunig2000} M. M. Breunig, H.-P. Kriegel, R. T. Ng, and J. Sander, ``LOF: Identifying density-based local outliers,'' in \textit{Proc. ACM SIGMOD Int. Conf. Management of Data}, 2000, pp. 93--104, doi: 10.1145/335191.335388.
+\bibitem{pedregosa2011} F. Pedregosa \textit{et al.}, ``Scikit-learn: Machine learning in Python,'' \textit{Journal of Machine Learning Research}, vol. 12, pp. 2825--2830, 2011.
+\bibitem{bergmeir2012} C. Bergmeir and J. M. Ben\'itez, ``On the use of cross-validation for time series predictor evaluation,'' \textit{Information Sciences}, vol. 191, pp. 192--213, 2012, doi: 10.1016/j.ins.2011.12.028.
+\end{thebibliography}
+
+\end{document}
