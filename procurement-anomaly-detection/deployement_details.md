@@ -1,9 +1,5 @@
 # Deployment Details
 
-**Project:** Machine Learning-Based Early Detection of Temporal Anomalies in B2B Procurement Using Customer-Part Purchase Patterns
-**Group:** BE-A21 (Jaydip Chavan, Kaushal Borude, Anuj Khaire, Devanshu Nirmal)
-**Guide:** Rahul Diwate Sir
-
 | Item | Value |
 |---|---|
 | Platform | Streamlit Community Cloud (free) |
@@ -12,12 +8,9 @@
 | Branch deployed | `dataset-inspection` (switch to `main` once merged) |
 | Main file path | `procurement-anomaly-detection/app.py` |
 | Python version | 3.12 (the platform default; the app is tested on 3.14 locally) |
-| Live URL | `https://<FILL-IN-AFTER-DEPLOY>.streamlit.app` |
-| Deployed on | `<FILL-IN-DATE>` |
+| Live URL | https://b2b-procurement-anomaly.streamlit.app |
+| Deployed by | Jaydip Chavan |
 | Cost | Rs. 0 (no credit card, no paid tier) |
-
-> Fill in the two placeholders (Live URL, Deployed on) right after you click
-> Deploy, so this file matches what you show in the presentation.
 
 ---
 
@@ -74,7 +67,6 @@ Say this in the presentation:
 | Option | Why we did not pick it |
 |---|---|
 | Hugging Face Spaces | Also free and a good fallback. It needs a separate repository or push, so it is more setup for no extra benefit. |
-| Render / Railway | Free tiers are limited or need a card, and they need a start command and config. |
 | AWS / Azure / GCP (Docker) | Powerful but overkill, and cost and setup effort are higher. This is suitable for a future production version. |
 | Local only | No shareable link. We keep it as a backup for the demo. |
 
@@ -82,54 +74,44 @@ Say this in the presentation:
 
 ## 3. Step-by-step deployment
 
-### Step 1: Prepare the repository
-1. Added a `.gitignore` (ignores `.venv/`, `__pycache__/`, `*.log`, `.env`,
-   `.streamlit/secrets.toml`).
-2. Removed already-tracked junk files (`.pyc`, `.streamlit-run.log`) from git:
-   ```bash
-   git rm -r --cached procurement-anomaly-detection/.streamlit-run.log procurement-anomaly-detection/__pycache__ procurement-anomaly-detection/src/__pycache__
-   ```
-3. Confirmed the two CSV files the dashboard reads are committed.
-4. Confirmed `requirements.txt` lists the pinned packages:
-   `streamlit`, `pandas`, `numpy`, `altair`, `matplotlib`, `scikit-learn`.
-5. Committed and pushed to GitHub:
-   ```bash
-   git add .gitignore procurement-anomaly-detection/deployement_details.md
-   git commit -m "Add gitignore and deployment details"
-   git push origin dataset-inspection
-   ```
-
-### Step 2: Create the Streamlit Community Cloud account
+### Step 1: Create the Streamlit Community Cloud account
 1. Open https://share.streamlit.io.
 2. Click **Continue with GitHub** and authorize Streamlit to read the
    repositories.
 
-### Step 3: Create the app
+### Step 2: Create the app
 1. Click **Create app**, then choose **Yup, I have an app**.
 2. Fill in:
    - **Repository:** `codepool1437/Major_Project`
    - **Branch:** `dataset-inspection`
    - **Main file path:** `procurement-anomaly-detection/app.py`
-   - **App URL (optional):** pick a custom name, for example
-     `procurement-anomaly-detection`
+   - **App URL (optional):** custom subdomain `b2b-procurement-anomaly`
 3. Open **Advanced settings**, select Python **3.12**, and click **Save**.
    No secrets are needed.
 4. Click **Deploy**.
 
-### Step 4: Wait for the build
+### Step 3: Wait for the build
 The platform installs the packages from `requirements.txt` and starts the app.
 This takes a few minutes. Build logs appear on the right side of the screen.
 
-### Step 5: Verify the live app
+### Step 4: Verify the live app
 1. Open the live URL and check that all three tabs load.
 2. In the Overview tab, check the headline numbers: **13,861 alerts from
    64,892 eligible events (21.36%)**.
 3. In Alerts & Investigation, apply a filter, then test the CSV download.
 4. In the Event Inspector, pick a customer and item and check that the history
    and IPI chart appear.
-5. Paste the URL at the top of this file.
+5. Record the URL at the top of this file (done).
 
-### Step 6: Updating the app later
+**Verification result:** the live app at
+https://b2b-procurement-anomaly.streamlit.app loaded successfully. The
+Overview metrics matched our experimental results exactly: 64,892 eligible
+purchase events, 13,861 potential early reorders, 21.36% flagged, and 136,372
+reorder events with a prior purchase. The sidebar filters (customer, item/part,
+severity, request date range) and the three tabs (Overview, Alerts &
+Investigation, Event Inspector) rendered correctly.
+
+### Step 5: Updating the app later
 Push to the deployed branch. The app redeploys automatically:
 ```bash
 git add .
@@ -139,45 +121,9 @@ git push origin dataset-inspection
 
 ---
 
-## 4. How the deployment fits the architecture
-
-```
-Raw yearly CSVs -> src/ scripts (offline: IPI, features, Isolation Forest,
-scoring, evaluation) -> pre-computed CSVs in results/ and data/processed/
-                                     |
-                                     v
-                  GitHub repository (codepool1437/Major_Project)
-                                     |  auto-redeploy on push
-                                     v
-              Streamlit Community Cloud runs app.py (read-only)
-                                     |
-                                     v
-             Reviewer opens the public URL in a browser
-```
-
-Only the last two blocks run in the cloud. Training and evaluation stay offline
-and reproducible with the commands in `README.md`.
-
 ---
 
-## 5. Limitations and honest statements
-
-- This is a **prototype / decision-support tool**. Alerts require human review
-  and are not confirmed anomalies.
-- It is **not** an industrial deployment. Nothing here claims cost, waste,
-  inventory or emission savings. Evaluation uses a chronological split and
-  synthetic early-reorder injections (see `results/algorithm_experiment_report.md`).
-- The free tier has **limited resources**. Free apps go to **sleep after a
-  period of inactivity**, so the first load may take a short while to wake up.
-  **Open the link a few minutes before presenting.**
-- The app is **public** on the free plan, and the dataset is the public,
-  anonymized B2B-Parts-Rec dataset.
-- The dashboard reads **static pre-computed files**. It does not stream live
-  procurement data.
-
----
-
-## 6. Questions the guide may ask (with short answers)
+## 4. FAQS
 
 **Q: Why did you deploy on Streamlit Community Cloud?**
 It is free, built for Streamlit apps, deploys directly from GitHub with
@@ -212,26 +158,3 @@ their own history (alert rule: `IPI_DAYS <= 0.30 x historical median IPI`), and
 lets a reviewer inspect each case.
 
 ---
-
-## 7. One-minute script for the slide
-
-> "We deployed our dashboard on Streamlit Community Cloud, which is free and
-> deploys directly from our GitHub repository. The heavy processing, meaning
-> inter-purchase interval features and Isolation Forest scoring, runs offline.
-> The cloud app loads the pre-computed ranked alerts, so it is lightweight. Every
-> push to GitHub redeploys the app automatically. It is a prototype
-> decision-support tool: alerts need human review, and for production we would
-> move to Docker on a cloud provider with a database connection and
-> authentication."
-
----
-
-## 8. Quick troubleshooting
-
-| Problem | Fix |
-|---|---|
-| Build fails on a package version | Read the build log, then relax the failing pin in `requirements.txt` and push. |
-| `FileNotFoundError` for a CSV | The CSV is not committed or not on the deployed branch. Check `git ls-files`. |
-| Wrong main file | In app settings, set it to `procurement-anomaly-detection/app.py`. |
-| App is slow on first open | It was asleep. Wait for it to wake up, and open it before the presentation. |
-| Python version error | In app settings, choose Python 3.12 or 3.13 and reboot the app. |
