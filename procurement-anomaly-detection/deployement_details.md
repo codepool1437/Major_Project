@@ -9,7 +9,7 @@
 | Main file path | `procurement-anomaly-detection/app.py` |
 | Python version | 3.12 (the platform default; the app is tested on 3.14 locally) |
 | Live URL | https://b2b-procurement-anomaly.streamlit.app |
-| Deployed by | Jaydip Chavan |
+| Deployed by | codepool1437 (Jaydip Chavan) |
 | Cost | Rs. 0 (no credit card, no paid tier) |
 
 ---
